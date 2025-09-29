@@ -1,43 +1,76 @@
 #!/usr/bin/env python3
+import os
 import time
-import requests
+import json
+from datetime import datetime
 from waveshare_epd import epd2in13_V4
 from PIL import Image, ImageDraw, ImageFont
 import textwrap
-from datetime import datetime
+from notion_client import Client
 
 # ---------------- CONFIG ----------------
-API_URL = "https://1qu1d1h5r5.execute-api.us-east-1.amazonaws.com/notion-dashboard"  # Your hosted API endpoint
-REFRESH_INTERVAL = 300  # seconds (5 minutes)
+REFRESH_INTERVAL_DISPLAY = 300  # refresh e-ink every 5 minutes
+REFRESH_INTERVAL_NOTION = 1800  # fetch new tasks every 30 minutes
 MAX_TASKS_DISPLAY = 5
+CACHE_FILE = "tasks_cache.json"
 
 # Fonts
 FONT_HEADER = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 16)
 FONT_TASK = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 14)
 FONT_FOOTER = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 12)
-# ----------------------------------------
 
-def fetch_tasks():
-    """Call the hosted API and return a list of task dicts."""
+# Notion setup
+NOTION_TOKEN = os.environ.get("NOTION_TOKEN")
+DATABASE_ID = os.environ.get("NOTION_DATABASE_ID")
+notion = Client(auth=NOTION_TOKEN)
+
+# ---------------- HELPERS ----------------
+def fetch_today_tasks():
+    """Fetch tasks from Notion due today."""
+    today_str = datetime.now().strftime("%Y-%m-%d")
     try:
-        response = requests.get(API_URL, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-        return data.get("tasks", [])
+        response = notion.databases.query(
+            database_id=DATABASE_ID,
+            filter={
+                "property": "Due",
+                "date": {"equals": today_str}
+            }
+        )
+        tasks = []
+        for result in response.get("results", []):
+            props = result["properties"]
+            task = {
+                "name": props["Name"]["title"][0]["text"]["content"] if props["Name"]["title"] else "Unnamed",
+                "status": props.get("Status", {}).get("select", {}).get("name", "pending"),
+                "priority": props.get("Priority", {}).get("select", {}).get("name", "")
+            }
+            tasks.append(task)
+        save_cache(tasks)
+        return tasks
     except Exception as e:
-        print("Error fetching tasks:", e)
+        print("Error fetching tasks from Notion:", e)
+        return load_cache()  # fallback to cached tasks
+
+def save_cache(tasks):
+    with open(CACHE_FILE, "w") as f:
+        json.dump(tasks, f)
+
+def load_cache():
+    try:
+        with open(CACHE_FILE, "r") as f:
+            return json.load(f)
+    except FileNotFoundError:
         return []
 
 def render_progress_bar(draw, x, y, width, height, completed, total):
-    """Draw a horizontal progress bar."""
     if total == 0:
         return
     progress_width = int((completed / total) * width)
-    draw.rectangle((x, y, x + width, y + height), outline=0, fill=255)  # background
-    draw.rectangle((x, y, x + progress_width, y + height), outline=0, fill=0)  # filled portion
+    draw.rectangle((x, y, x + width, y + height), outline=0, fill=255)
+    draw.rectangle((x, y, x + progress_width, y + height), outline=0, fill=0)
 
-def update_display(tasks, error=False):
-    """Render tasks or error info onto the e-ink display."""
+def update_display(tasks):
+    """Render tasks onto e-ink display."""
     epd = epd2in13_V4.EPD()
     epd.init()
     epd.Clear(0xFF)
@@ -46,14 +79,11 @@ def update_display(tasks, error=False):
     draw = ImageDraw.Draw(image)
 
     # Header
-    draw.text((5, 0), "Notion Dashboard", font=FONT_HEADER, fill=0)
+    draw.text((5, 0), "Today's Tasks", font=FONT_HEADER, fill=0)
 
     y = 25
-
-    if error:
-        draw.text((5, y), "⚠ Error fetching tasks", font=FONT_TASK, fill=0)
-    elif not tasks:
-        draw.text((5, y), "No tasks to display", font=FONT_TASK, fill=0)
+    if not tasks:
+        draw.text((5, y), "No tasks for today!", font=FONT_TASK, fill=0)
     else:
         total = len(tasks)
         completed_count = sum(1 for t in tasks if t.get("status", "").lower() == "done")
@@ -61,52 +91,47 @@ def update_display(tasks, error=False):
         y += 20
 
         # Progress bar
-        render_progress_bar(draw, x=5, y=y, width=epd.height - 10, height=5, completed=completed_count, total=total)
+        render_progress_bar(draw, x=5, y=y, width=epd.height - 10, height=5,
+                            completed=completed_count, total=total)
         y += 10
 
         # Show top tasks
         for task in tasks[:MAX_TASKS_DISPLAY]:
-            name = task.get("name", "Unnamed task")
+            name = task.get("name", "Unnamed")
             status = task.get("status", "pending").lower()
             symbol = "✔" if status == "done" else "☐"
             priority = task.get("priority", "").capitalize()
             if priority:
-                if priority.lower() == "high":
-                    p = "[H]"
-                elif priority.lower() == "medium":
-                    p = "[M]"
-                elif priority.lower() == "low":
-                    p = "[L]"
-                else:
-                    p = f"[{priority[0]}]"
+                p = {"High": "[H]", "Medium": "[M]", "Low": "[L]"}.get(priority, f"[{priority[0]}]")
             else:
                 p = ""
-            due = task.get("due", "")
-            line_prefix = f"{symbol} {p}".strip()
-            line_text = f"{line_prefix} {name}"
-            if due:
-                line_text += f" (Due: {due})"
-            # Wrap text
+            line_text = f"{symbol} {p} {name}".strip()
             wrapped = textwrap.wrap(line_text, width=25)
             for line in wrapped:
                 draw.text((5, y), line, font=FONT_TASK, fill=0)
                 y += 15
 
-    # Footer: timestamp
+    # Footer
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     draw.text((5, epd.width - 15), f"Updated: {now}", font=FONT_FOOTER, fill=0)
 
     epd.display(epd.getbuffer(image))
     epd.sleep()
 
+# ---------------- MAIN LOOP ----------------
 def main():
+    last_fetch = 0
+    tasks = []
+
     while True:
-        tasks = fetch_tasks()
-        if tasks:
-            update_display(tasks)
-        else:
-            update_display(tasks=[], error=True)
-        time.sleep(REFRESH_INTERVAL)
+        now = time.time()
+        # Fetch new tasks every REFRESH_INTERVAL_NOTION
+        if now - last_fetch > REFRESH_INTERVAL_NOTION:
+            tasks = fetch_today_tasks()
+            last_fetch = now
+
+        update_display(tasks)
+        time.sleep(REFRESH_INTERVAL_DISPLAY)
 
 if __name__ == "__main__":
     main()
