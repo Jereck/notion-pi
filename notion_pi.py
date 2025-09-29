@@ -35,7 +35,7 @@ def fetch_today_tasks():
         response = notion.databases.query(
             database_id=DATABASE_ID,
             filter={
-                "property": "Due",
+                "property": "Due Date",
                 "date": {"equals": today_str}
             }
         )
