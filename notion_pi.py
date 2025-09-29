@@ -3,10 +3,13 @@ import os
 import time
 import json
 from datetime import datetime
+from dotenv import load_dotenv
 from waveshare_epd import epd2in13_V4
 from PIL import Image, ImageDraw, ImageFont
 import textwrap
 from notion_client import Client
+
+load_dotenv()
 
 # ---------------- CONFIG ----------------
 REFRESH_INTERVAL_DISPLAY = 300  # refresh e-ink every 5 minutes
