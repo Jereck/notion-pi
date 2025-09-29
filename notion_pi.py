@@ -13,7 +13,7 @@ load_dotenv()
 
 # ---------------- CONFIG ----------------
 REFRESH_INTERVAL_DISPLAY = 300  # refresh e-ink every 5 minutes
-REFRESH_INTERVAL_NOTION = 1800  # fetch new tasks every 30 minutes
+REFRESH_INTERVAL_NOTION = 600  # fetch new tasks every 30 minutes
 MAX_TASKS_DISPLAY = 5
 CACHE_FILE = "tasks_cache.json"
 
