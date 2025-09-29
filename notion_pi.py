@@ -5,7 +5,7 @@ from waveshare_epd import epd2in13_V4
 from PIL import Image, ImageDraw, ImageFont
 
 # ---------------- CONFIG ----------------
-API_URL = ""  # Your hosted API endpoint
+API_URL = "https://1qu1d1h5r5.execute-api.us-east-1.amazonaws.com/notion-dashboard"  # Your hosted API endpoint
 REFRESH_INTERVAL = 300  # seconds (5 minutes)
 FONT = ImageFont.load_default()
 # ----------------------------------------
