@@ -23,7 +23,6 @@ def fetch_tasks():
         response = requests.get(API_URL, timeout=10)
         response.raise_for_status()
         data = response.json()
-        # Expecting JSON: {"tasks": [{"name": "...", "status": "...", "priority": "...", "due": "..."}]}
         return data.get("tasks", [])
     except Exception as e:
         print("Error fetching tasks:", e)
@@ -82,7 +81,7 @@ def update_display(tasks, error=False):
                     p = f"[{priority[0]}]"
             else:
                 p = ""
-            due = task.get("due", "")
+            due = task.get("due date", "")
             line_prefix = f"{symbol} {p}".strip()
             line_text = f"{line_prefix} {name}"
             if due:
