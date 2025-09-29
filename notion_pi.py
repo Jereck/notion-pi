@@ -81,7 +81,7 @@ def update_display(tasks, error=False):
                     p = f"[{priority[0]}]"
             else:
                 p = ""
-            due = task.get("due date", "")
+            due = task.get("due", "")
             line_prefix = f"{symbol} {p}".strip()
             line_text = f"{line_prefix} {name}"
             if due:
